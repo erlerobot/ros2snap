@@ -1,0 +1,55 @@
+#!/bin/sh
+# Create snappy package from a ROS package including the 
+# run dependencies of the corresponding package.
+# Defaults to the "jade" release, but you may specify 
+# "indigo" or another release as first command line
+# argument.
+#
+# The script should be launched from the root of the catkin overlay
+#
+# (C) 2015 Erle Robotics S.L.
+# Author: Víctor Mayoral Vilches <victor@erlerobot.com>
+
+if [ $# -eq 0 ]
+  then
+    echo "ros2snap <ros-pkg-name>"
+    exit 1
+fi
+
+# add snappy metadata
+mkdir -p install_isolated/meta
+cat <<EOF > install_isolated/meta/package.yaml
+name: ros-snaptest
+architecture: `dpkg --print-architecture`
+version: 0.1
+vendor: Erle Robotics <contact@erlerobot.com>
+EOF
+
+cat <<EOF > install_isolated/meta/readme.md
+ROS ros2snap test
+
+Automatically create a snap package from a ROS one.
+EOF
+
+# Figure out run dependencies of the ROS package and add them
+DEPS=$(cat src/ros_erle_takeoff_land/package.xml | grep -v "<!" |  grep -oP '(?<=run_depend>)[^<]+')
+for i in $DEPS
+do  echo "Computing dependencies for $i"	
+	for f in `dpkg -L ros-indigo-$i`; 
+	do [ -f $f ] || continue;
+	 d=${f#/};
+	 directorio=$(dirname $d| sed 's$opt/ros/indigo/$$')
+	 mkdir -p install_isolated/$directorio; 
+	 cp -a $f install_isolated/$directorio; 
+	 #echo "copying $f in install_isolated/$directorio"
+	done
+done
+
+# copy in Ubuntu package dependencies
+# FIXME: this is missing files created in postinst/at runtime, alternatives, etc.
+#mkdir -p install_isolated/debs
+#for f in `dpkg -L $NEEDED_PKGS_DEPS`; do [ -f $f ] || continue; d=${f#/}; mkdir -p install_isolated/debs/$(dirname $d); cp -a $f install_isolated/debs/$d; done
+
+
+
+#echo "Successfully built $1 snap"
