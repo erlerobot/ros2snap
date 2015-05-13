@@ -16,6 +16,10 @@ if [ $# -eq 0 ]
     exit 1
 fi
 
+#TODO add --compile flag
+# Compile the ROS package
+catkin_make_isolated --install --pkg $1
+
 # add snappy metadata
 mkdir -p install_isolated/meta
 cat <<EOF > install_isolated/meta/package.yaml
@@ -23,6 +27,8 @@ name: ros-snaptest
 architecture: `dpkg --print-architecture`
 version: 0.1
 vendor: Erle Robotics <contact@erlerobot.com>
+binaries:
+ - name: bin/ros2snap
 EOF
 
 cat <<EOF > install_isolated/meta/readme.md
@@ -30,6 +36,23 @@ ROS ros2snap test
 
 Automatically create a snap package from a ROS one.
 EOF
+
+# FIXME: add wrapper to make deb lib packages work from /apps/... (will be
+# fixed once we do proper overlay mounting of /debs into the app ns)
+mkdir -p install_isolated/bin
+cat <<EOF > install_isolated/bin/ros2snap
+#!/bin/bash -e
+mydir=\$(dirname \$(dirname \$0))
+export PYTHONPATH=\$mydir/lib/python2.7/dist-packages:\$PYTHONPATH
+export PATH=\$mydir/bin:\$PATH
+export LD_LIBRARY_PATH=\$mydir/lib:\$mydir/lib/arm-linux-gnueabihf:\$mydir/lib:\$mydir/lib/arm-linux-gnueabihf:/home/ubuntu/trusty/opt/ros/indigo/lib:/home/ubuntu/trusty/usr/lib/arm-linux-gnueabihf:/home/ubuntu/trusty/usr/lib/:\$PATH
+. \$mydir/setup.bash
+export ROS_PACKAGE_PATH=\$mydir/share:\$mydir/stacks:$ROS_PACKAGE_PATH
+#rosrun $1 $1
+./lib/$1/$1
+EOF
+chmod 755 install_isolated/bin/ros2snap
+
 
 # Figure out run dependencies of the ROS package and add them
 DEPS=$(cat src/ros_erle_takeoff_land/package.xml | grep -v "<!" |  grep -oP '(?<=run_depend>)[^<]+')
@@ -45,11 +68,8 @@ do  echo "Computing dependencies for $i"
 	done
 done
 
-# copy in Ubuntu package dependencies
-# FIXME: this is missing files created in postinst/at runtime, alternatives, etc.
-#mkdir -p install_isolated/debs
-#for f in `dpkg -L $NEEDED_PKGS_DEPS`; do [ -f $f ] || continue; d=${f#/}; mkdir -p install_isolated/debs/$(dirname $d); cp -a $f install_isolated/debs/$d; done
+# TODO add --snap option
+# Build the snap
+#snappy build install_isolated
 
-
-
-#echo "Successfully built $1 snap"
+echo "Successfully built $1 snap"
