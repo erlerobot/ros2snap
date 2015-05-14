@@ -12,7 +12,7 @@ Create a trusty chroot for dev purposes
 
 This repository is based on Martin Pitt's (@martinpitt) work (http://www.piware.de/2015/01/snappy-package-for-robot-operating-system-tutorial/).
 
-##Creating a chroot with trusty
+###Creating a chroot with trusty
 
 ```
 mkdir ~/trusty
@@ -26,6 +26,7 @@ sudo mount -o bind /sys ~/trusty/sys
 Next comes the magic. This registers the ARM executable format with the QEMU static binary. Thus, the path to qemu-arm-static has to match where it is located on the host and slave systems:
 
 ```
+```
 echo ':arm:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x28\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-arm-static:' > /proc/sys/fs/binfmt_misc/register
 ```
 
@@ -33,7 +34,7 @@ echo ':arm:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x2
 sudo chroot ~/trusty
 ```
 
-##Installing ROS
+###Installing ROS
 
 ```bash
 sudo update-locale LANG=C LANGUAGE=C LC_ALL=C LC_MESSAGES=POSIX
@@ -91,7 +92,7 @@ Install ROS (826 MB):
 sudo apt-get install -y ros-indigo-ros-base ros-indigo-mavros ros-indigo-mavros-extras ros-indigo-serial
 ```
 
-##Getting snappy-tools (**not working*)
+###Getting snappy-tools (**not working*)
 
 Add the sources
 ```bash
@@ -105,7 +106,7 @@ apt-get update
 apt-get source -b snappy-tools
 ```
 
-##Compiling a ROS package
+###Compiling a ROS package
 
 ```bash
 apt-get install git
@@ -141,7 +142,7 @@ ImportError: No module named rospkg
 
 ----
 
-##Building the .snap
+###Building the .snap
 
 The ``build.sh`` script creates an Ubuntu Snappy package for the ROS tutorial
 and all of its ROS and Ubuntu dependencies. It needs to run in a minimal Ubuntu
@@ -159,7 +160,7 @@ https://bugs.launchpad.net/snappy-ubuntu/+bugs)
 This currently defaults to the "jade" ROS release. If you want to build indigo
 instead, append "indigo" to the above build.sh command line.
 
-##Installing the snap package
+###Installing the snap package
 
 
  - Start the snappy VM/instance. See
@@ -174,7 +175,7 @@ instead, append "indigo" to the above build.sh command line.
    file name will look accordingly).
 
 
-##Running the snap package
+###Running the snap package
 
 At the moment you have to call the ROS tools through a `rossnap.ros-tutorial`
 wrapper, which ensures that it can see the bundled Ubuntu packages. This
