@@ -29,6 +29,8 @@ Show the help
 ./ros2snap -h ros_erle_takeoff_land
 ```
 
+####Credit
+This repository is based on Martin Pitt's (@martinpitt) work (http://www.piware.de/2015/01/snappy-package-for-robot-operating-system-tutorial/).
 
 Index
 ------
