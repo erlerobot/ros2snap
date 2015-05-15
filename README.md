@@ -11,6 +11,21 @@ Usage: ros2snap [-rvsh] <ros-pkg-name>
     -h: show this help"
 
 ```
+Examples:
+Compile the ROS package `ros_erle_takeoff_land`, an generate a snap for it.
+```bash
+./ros2snap -rs ros_erle_takeoff_land
+```
+
+Only generate the metadata and fetch dependencies and libraries under install_isolated
+```bash
+./ros2snap ros_erle_takeoff_land
+```
+
+Show the help
+```bash
+./ros2snap -h ros_erle_takeoff_land
+```
 
 
 Index
