@@ -58,7 +58,7 @@ ROSNAME_FINAL=$(echo $ROSNAME|sed 's/_/-/g')
 # add snappy metadata
 mkdir -p install_isolated/meta
 cat <<EOF > install_isolated/meta/package.yaml
-name: ros-snaptest
+name: ros2snap
 architecture: `dpkg --print-architecture`
 version: 0.1
 vendor: Erle Robotics <contact@erlerobot.com>
@@ -81,7 +81,7 @@ cat <<EOF > install_isolated/bin/$ROSNAME_FINAL
 mydir=\$(dirname \$(dirname \$0))
 export PYTHONPATH=\$mydir/lib/python2.7/dist-packages:\$PYTHONPATH
 export PATH=\$mydir/bin:\$PATH
-export LD_LIBRARY_PATH=\$mydir/lib:\$mydir/lib/arm-linux-gnueabihf:\$mydir/lib:\$mydir/lib/arm-linux-gnueabihf:/home/ubuntu/trusty/opt/ros/indigo/lib:/home/ubuntu/trusty/usr/lib/arm-linux-gnueabihf:/home/ubuntu/trusty/usr/lib/:\$PYTHONPATH
+export LD_LIBRARY_PATH=\$mydir/lib:\$mydir/lib/arm-linux-gnueabihf:\$mydir/lib:\$mydir/lib/arm-linux-gnueabihf:/home/ubuntu/trusty/opt/ros/indigo/lib:/home/ubuntu/trusty/usr/lib/arm-linux-gnueabihf:/home/ubuntu/trusty/usr/lib/:/home/ubuntu/trusty/opt/ros/indigo/lib/:\$PYTHONPATH
 export ROS_PACKAGE_PATH=\$mydir/share:\$mydir/stacks:\$ROS_PACKAGE_PATH
 . \$mydir/setup.bash
 #rosrun $1 $1
