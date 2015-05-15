@@ -16,7 +16,7 @@ Usage: ros2snap [-rvsh] <ros-pkg-name>
 Index
 ------
 - [Create a trusty chroot for dev purposes](https://github.com/erlerobot/ros2snap/blob/master/README.md#create-a-trusty-chroot-for-dev-purposes)
-- [Building a snap for the whole ROS ](https://github.com/erlerobot/ros2snap/blob/master/README.md#building-a-snap-for-the-whole-ros-)
+- [Building a snap for the whole ROS ](https://github.com/erlerobot/ros2snap/blob/master/README.md#building-a-snap-for-the-whole-ros)
 
 
 
