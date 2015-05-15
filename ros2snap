@@ -10,15 +10,49 @@
 # (C) 2015 Erle Robotics S.L.
 # Author: Víctor Mayoral Vilches <victor@erlerobot.com>
 
+VERSION=1.0
+USAGE="Usage: `basename $0` [-rvsh] <ros-pkg-name>"
+SNAP=0
+
 if [ $# -eq 0 ]
   then
-    echo "ros2snap <ros-pkg-name>"
+    echo "ros2snap [-rvsh] <ros-pkg-name>"
     exit 1
 fi
 
 #TODO add --compile flag
 # Compile the ROS package
-catkin_make_isolated --install --pkg $1
+#catkin_make_isolated --install --pkg $1
+
+while getopts rvsh: OPT; do
+    case "$OPT" in
+        r)
+            echo "compiling the ros package"
+            catkin_make_isolated --install --pkg $2
+            #exit 0
+            ;;
+        v)
+            echo "`basename $0` version $VERSION"
+            exit 0
+            ;;
+        s)
+            SNAP=1            
+            ;;            
+        h)
+            echo "Usage: `basename $0` [-rvsh] <ros-pkg-name>"
+            echo "		-r: compile the ros package"
+            echo "		-v: version"
+            echo "		-s: create a snap"
+            echo "		-h: show this help"
+            exit 0
+            ;;            
+        \?)
+            # getopts issues an error message
+            echo $USAGE >&2
+            exit 1
+            ;;
+    esac
+done
 
 # add snappy metadata
 mkdir -p install_isolated/meta
@@ -69,7 +103,10 @@ do  echo "Computing dependencies for $i"
 done
 
 # TODO add --snap option
-# Build the snap
-#snappy build install_isolated
+
+if [ $SNAP -eq 1 ]; then
+	snappy build install_isolated
+fi
+
 
 echo "Successfully built $1 snap"
