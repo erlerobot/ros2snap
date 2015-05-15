@@ -20,14 +20,10 @@ if [ $# -eq 0 ]
     exit 1
 fi
 
-#TODO add --compile flag
-# Compile the ROS package
-#catkin_make_isolated --install --pkg $1
-
 while getopts rvsh: OPT; do
     case "$OPT" in
         r)
-            echo "compiling the ros package"
+            echo "compiling the ROS package"
             catkin_make_isolated --install --pkg $2
             #exit 0
             ;;
@@ -101,8 +97,6 @@ do  echo "Computing dependencies for $i"
 	 #echo "copying $f in install_isolated/$directorio"
 	done
 done
-
-# TODO add --snap option
 
 if [ $SNAP -eq 1 ]; then
 	snappy build install_isolated
