@@ -34,6 +34,9 @@ Show the help
 ####Credit
 This repository is based on Martin Pitt's (@martinpitt) work (http://www.piware.de/2015/01/snappy-package-for-robot-operating-system-tutorial/).
 
+####License
+GPLv3
+
 Index
 ------
 - [Create a trusty chroot for dev purposes](https://github.com/erlerobot/ros2snap/blob/master/README.md#create-a-trusty-chroot-for-dev-purposes)
