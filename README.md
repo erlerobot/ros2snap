@@ -1,8 +1,6 @@
 snappy apps out of ROS packages
 ===============================
 
-![](img/ros-2-snap.png)
-
 `ros2snap` is a shell script that produces a snappy app out of a ROS package. The script does its best to fetch all the libraries and dependencies that the ROS package may need.
 
 ```bash
