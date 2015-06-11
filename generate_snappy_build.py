@@ -7,6 +7,7 @@
 #   Copy install directory of catkin workspace to snappy_build
 #   Copy all run dependency files into snappy_build/<package>
 # TODO check if all copies can be turned into symlinks
+# TODO Command line args
 
 import bloom.generators.common
 import catkin_pkg.packages
@@ -15,8 +16,6 @@ import apt
 import os
 import shutil
 from sys import argv
-
-# TODO: skip redundant packages
 
 def copy_installed_files(key):
   # Resolve key to system package name
@@ -78,6 +77,9 @@ if len(packages) == 0:
   print "No packages found in catkin workspace. Abort."
   exit()
 
+# Is there a fancier API way to do this?
+os.system("catkin_make install")
+
 # If no package was specified, just grab the first one
 if package_key == "":
   package_key = packages.keys()[0]
@@ -137,7 +139,6 @@ if os.path.exists(pkg_lib_dir):
     f = open(snappy_lib_dir + binary, "w+")
     script = "#!/usr/bin/bash\n" +\
              "mydir=\"$( cd \"../../$( dirname \"${BASH_SOURCE[0]}\" )\" && pwd )\"\n" +\
-             "echo \"Snappy app root is: $mydir\"\n" +\
              ". $mydir/opt/ros/" + distro + "/setup.bash\n" + \
              ". $mydir/install/setup.bash\n" +\
              "$mydir/" + pkg_lib_dir + binary
@@ -187,25 +188,6 @@ shutil.copy2("/opt/ros/indigo/setup.sh", "snappy_build/" + package_key + "/opt/r
 shutil.copy2("/opt/ros/indigo/_setup_util.py",\
     "snappy_build/" + package_key + "/opt/ros/indigo/_setup_util.py")
 
-# TODO: Tell the snappy people that the service does not seem to start, or that this approach is useless because
-# it does not affect the environment
-# Write a script that sets up our environment and add it as a service
-# Get name of folder where the script lives
-"""service ="#!/bin/bash\n" +\
-         "mydir=\"$(dirname $( cd \"$( dirname \"${BASH_SOURCE[0]}\" )\" && pwd ))\"\n" +\
-         ". $mydir/opt/ros/" + distro + "/setup.bash\n" + \
-         ". $mydir/install/setup.bash\n"
-
-f = open(snappy_bin_dir + package_key + "_service.start", "w+" )
-f.write(service)
-f.close()
-
-services_string = " - name: " + package_key + "_service\n" +\
-    "   start: \". bin/" + package_key + "_service.start\"\n" +\
-    "   description: Set up environment for " + package_key"""
-
-# TODO Inject extra necessary dependencies (Is this needed? Maybe not, if we get all recursive deps.)
-
 data = "name: " + package_key + "\n" +\
        "version: " + version + "\n" +\
        "vendor: " + maintainer_string + "\n" +\
@@ -215,3 +197,5 @@ data = "name: " + package_key + "\n" +\
 f = open(snappy_meta_dir + "package.yaml", "w+")
 f.write(data)
 f.close()
+
+os.system("snappy build snappy_build/" + package_key)
