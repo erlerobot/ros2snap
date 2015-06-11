@@ -40,8 +40,6 @@ def copy_installed_files(key):
       shutil.copy(dep_path, fullpath)
 
 
-if os.path.exists("snappy_build"):
-  shutil.rmtree("snappy_build")
 
 distro = os.getenv("ROS_DISTRO", "jade")
 
@@ -65,6 +63,9 @@ package = packages[package_key]
 if package is None:
   print "Requested package " + package_key + " not found, abort."
   exit()
+
+if os.path.exists("snappy_build/" + package_key):
+  shutil.rmtree("snappy_build/" + package_key)
 
 if not os.path.exists("snappy_build"):
   os.mkdir("snappy_build")
@@ -133,13 +134,14 @@ shutil.copy("/opt/ros/indigo/setup.bash", "snappy_build/" + package_key + "/opt/
 service ="#!/bin/bash -e\n" +\
          "mydir=\$(dirname \$(dirname \$0))\n" + \
          ". $mydir/opt/ros/" + distro + "/setup.bash\n" + \
-         ". $mydir/install/setup.bash"
+         ". $mydir/install/setup.bash\n" +\
+         "roscore"
 
 f = open(snappy_bin_dir + package_key + "_service.start", "w+" )
 f.write(service)
 f.close()
 
-services_string = " - name: " + package_key + "\n" +\
+services_string = " - name: " + package_key + "_service\n" +\
     "   start: bin/" + package_key + "_service.start\n" +\
     "   description: Set up environment for " + package_key
 
