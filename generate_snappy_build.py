@@ -10,7 +10,6 @@
 
 import bloom.generators.common
 import catkin_pkg.packages
-import rosdep2
 
 import apt
 import os
@@ -98,17 +97,23 @@ f.close()
 # TODO: architecture, icon metadata and icon path
 
 binaries_string = ""
-# Collect all executable files from install/lib/<package> and launchfiles
+# Collect all executable files from install/lib/<package>
 pkg_lib_dir = "install/lib/" + package_key + "/"
 if os.path.exists(pkg_lib_dir):
   lib_binaries = [binary for binary in os.listdir(pkg_lib_dir) if os.access(pkg_lib_dir + binary, os.X_OK)]
-  for lib_binary in lib_binaries:
-    shutil.copyfile(pkg_lib_dir + lib_binary, snappy_bin_dir + lib_binary)
+  #for lib_binary in lib_binaries:
+  #  shutil.copyfile(pkg_lib_dir + lib_binary, snappy_bin_dir + lib_binary)
 
-  binaries_string += '\n'.join([" - name: install/lib/" + binary for binary in lib_binaries])
+  binaries_string += '\n'.join([" - name: " + pkg_lib_dir + binary for binary in lib_binaries])
+
+# Also collect scripts that were installed to install/share/<package>
+pkg_share_dir = "install/share/" + package_key + "/"
+if os.path.exists(pkg_share_dir):
+  share_scripts = [script for script in os.listdir(pkg_share_dir) if os.access(pkg_share_dir + script, os.X_OK)]
+  binaries_string += "\n".join([" - name: " + pkg_share_dir + script for script in share_scripts])
 
 # Create scripts launching the launchfiles out of our package
-launchdir = "install/share/" + package_key + "/launch"
+launchdir =  pkg_share_dir + "launch"
 if os.path.exists(launchdir):
   launchfiles = [os.listdir(launchdir)]
   for launchfile in launchfiles:
@@ -131,11 +136,11 @@ for run_dep in run_dep_keys:
 shutil.copy("/opt/ros/indigo/setup.bash", "snappy_build/" + package_key + "/opt/ros/indigo/setup.bash")
 
 # Write a script that sets up our environment and add it as a service
-service ="#!/bin/bash -e\n" +\
+service ="#!/bin/bash\n" +\
+         "echo \"Hello world! Running service.\"\n" +\
          "mydir=\$(dirname \$(dirname \$0))\n" + \
          ". $mydir/opt/ros/" + distro + "/setup.bash\n" + \
-         ". $mydir/install/setup.bash\n" +\
-         "roscore"
+         ". $mydir/install/setup.bash\n"
 
 f = open(snappy_bin_dir + package_key + "_service.start", "w+" )
 f.write(service)
