@@ -16,9 +16,15 @@ import os
 import shutil
 from sys import argv
 
+# TODO: skip redundant packages
+
 def copy_installed_files(key):
   # Resolve key to system package name
   key_entry = bloom.generators.common.resolve_rosdep_key(key, "ubuntu", "trusty")
+  print key_entry
+  if key_entry is None or (key_entry[0] is None) or (len(key_entry[0]) == 0):
+    return
+
   apt_name = key_entry[0][0]
 
   # Use apt python API to get all files
@@ -40,17 +46,19 @@ def copy_installed_files(key):
         os.makedirs(os.path.dirname(fullpath))
       shutil.copy2(dep_path, fullpath)
 
-def copy_recursive_dependencies(package):
+def copy_recursive_dependencies(package, copied_packages):
   run_dep_keys = [dep.name for dep in package.run_depends]
 
   for run_dep in run_dep_keys:
+    if run_dep in copied_packages:
+      continue
     copy_installed_files(run_dep)
+    copied_packages.add(run_dep)
     # Get the package.xml of the run dependencies if it's a ROS package
-    # TODO what to do about system packages?
     ros_path = os.path.dirname(os.getenv("ROS_ROOT")) + "/" + run_dep
     packages = catkin_pkg.packages.find_packages(ros_path)
     for package in packages.values():
-      copy_recursive_dependencies(package)
+      copy_recursive_dependencies(package, copied_packages)
 
 
 def check_create_dir(dirname):
@@ -102,7 +110,8 @@ version = package.version
 
 description = package.description
 
-copy_recursive_dependencies(package)
+copied_packages = set()
+copy_recursive_dependencies(package, copied_packages)
 
 # Inject description into readme.md
 f = open(snappy_meta_dir + "readme.md", "w+")
