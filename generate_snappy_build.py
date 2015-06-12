@@ -63,6 +63,36 @@ def check_create_dir(dirname):
   if not os.path.exists(dirname):
     os.mkdir(dirname)
 
+def collect_binaries(path):
+  pkg_dir = "install/" + path + "/" + package_key + "/"
+  if os.path.exists(pkg_dir):
+    snappy_dir = snappy_bin_dir + path + "/"
+    check_create_dir(snappy_dir)
+
+    ret = ""
+    for binary in os.listdir(pkg_dir):
+      if os.access(pkg_dir + binary, os.X_OK) and os.path.isfile(pkg_dir + binary):
+        f = open(snappy_dir + binary, "w+")
+        # TODO Parse python path version
+        # for the love of god, do something better to get the snap root
+
+        script = "#!/bin/bash\n" +\
+                 "mydir=$(dirname $(dirname $(builtin cd \"`dirname \"${BASH_SOURCE[0]}\"`\" > /dev/null && pwd)))\n" +\
+                 ". $mydir/install/setup.bash\n" +\
+                 ". $mydir/opt/ros/" + distro + "/setup.bash\n" + \
+                 "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$mydir/usr/lib/x86_64-linux-gnu\n" +\
+                 "export PATH=$PATH:$mydir/usr/bin\n" +\
+                 "export PYTHONPATH=$PYTHONPATH:$mydir/usr/lib/python2.7/dist-packages\n" +\
+                 "export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$mydir/usr/lib/pkgconfig:$mydir/usr/lib/x86_64-linux-gnu/pkgconfig\n" +\
+                 "$mydir/" + pkg_dir + binary + "\n"
+        f.write(script)
+        f.close()
+        ret += " - name: bin/" + path + "/" + binary + "\n"
+
+    return ret
+  return ""
+
+
 distro = os.getenv("ROS_DISTRO", "jade")
 
 path = os.getcwd()
@@ -76,7 +106,7 @@ if len(packages) == 0:
   print "No packages found in catkin workspace. Abort."
   exit()
 
-# Is there a fancier API way to do this?
+# Is there a fancier way to do this?
 os.system("catkin_make install")
 
 # If no package was specified, just grab the first one
@@ -88,6 +118,8 @@ package = packages[package_key]
 if package is None:
   print "Requested package " + package_key + " not found, abort."
   exit()
+
+print "Building snap for package " + package_key
 
 if os.path.exists("snappy_build/" + package_key):
   shutil.rmtree("snappy_build/" + package_key)
@@ -111,6 +143,7 @@ version = package.version
 
 description = package.description
 
+print "Copying all recursive run dependencies into snap"
 copied_packages = set()
 copy_recursive_dependencies(package, copied_packages)
 
@@ -124,32 +157,12 @@ f.close()
 
 binaries_string = ""
 
-def collect_binaries(path):
-  pkg_dir = "install/" + path + "/" + package_key + "/"
-  if os.path.exists(pkg_dir):
-    binaries = [binary for binary in os.listdir(pkg_dir)\
-        if os.access(pkg_dir + binary, os.X_OK) and os.path.isfile(pkg_dir + binary)]
-
-    snappy_dir = snappy_bin_dir + path + "/"
-    check_create_dir(snappy_dir)
-
-    for binary in binaries:
-      f = open(snappy_dir + binary, "w+")
-      script = "#!/usr/bin/bash\n" +\
-               "mydir=\"$( cd \"../../$( dirname \"${BASH_SOURCE[0]}\" )\" && pwd )\"\n" +\
-               ". $mydir/opt/ros/" + distro + "/setup.bash\n" + \
-               ". $mydir/install/setup.bash\n" +\
-               "$mydir/" + pkg_dir + binary
-      f.write(script)
-      f.close()
-
-    binaries_string += '\n'.join([" - name: bin/" + path + "/" + binary for binary in binaries])
-
-collect_executables("lib")
-collect_executables("share")
+print "Checking lib, share, and launch for executables"
+binaries_string += collect_binaries("lib")
+binaries_string += collect_binaries("share")
 
 # Create scripts launching the launchfiles out of our package
-launchdir =  pkg_share_dir + "launch"
+launchdir =  "install/share/" + package_key + "/launch"
 if os.path.exists(launchdir):
   launchfiles = [os.listdir(launchdir)]
   for launchfile in launchfiles:
@@ -177,5 +190,4 @@ f = open(snappy_meta_dir + "package.yaml", "w+")
 f.write(data)
 f.close()
 
-# TODO use something other than system
 os.system("snappy build snappy_build/" + package_key)
