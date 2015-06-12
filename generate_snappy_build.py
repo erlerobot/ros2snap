@@ -20,7 +20,6 @@ from sys import argv
 def copy_installed_files(key):
   # Resolve key to system package name
   key_entry = bloom.generators.common.resolve_rosdep_key(key, "ubuntu", "trusty")
-  print key_entry
   if key_entry is None or (key_entry[0] is None) or (len(key_entry[0]) == 0):
     return
 
@@ -125,48 +124,29 @@ f.close()
 
 binaries_string = ""
 
-# Collect all executable files from install/lib/<package>
-# Need to generate a wrapper bash script for each executable
-pkg_lib_dir = "install/lib/" + package_key + "/"
-if os.path.exists(pkg_lib_dir):
-  lib_binaries = [binary for binary in os.listdir(pkg_lib_dir)\
-      if os.access(pkg_lib_dir + binary, os.X_OK) and os.path.isfile(pkg_lib_dir + binary)]
+def collect_binaries(path):
+  pkg_dir = "install/" + path + "/" + package_key + "/"
+  if os.path.exists(pkg_dir):
+    binaries = [binary for binary in os.listdir(pkg_dir)\
+        if os.access(pkg_dir + binary, os.X_OK) and os.path.isfile(pkg_dir + binary)]
 
-  snappy_lib_dir = snappy_bin_dir + "lib/"
-  check_create_dir(snappy_lib_dir)
+    snappy_dir = snappy_bin_dir + path + "/"
+    check_create_dir(snappy_dir)
 
-  for binary in lib_binaries:
-    f = open(snappy_lib_dir + binary, "w+")
-    script = "#!/usr/bin/bash\n" +\
-             "mydir=\"$( cd \"../../$( dirname \"${BASH_SOURCE[0]}\" )\" && pwd )\"\n" +\
-             ". $mydir/opt/ros/" + distro + "/setup.bash\n" + \
-             ". $mydir/install/setup.bash\n" +\
-             "$mydir/" + pkg_lib_dir + binary
-    f.write(script)
-    f.close()
+    for binary in binaries:
+      f = open(snappy_dir + binary, "w+")
+      script = "#!/usr/bin/bash\n" +\
+               "mydir=\"$( cd \"../../$( dirname \"${BASH_SOURCE[0]}\" )\" && pwd )\"\n" +\
+               ". $mydir/opt/ros/" + distro + "/setup.bash\n" + \
+               ". $mydir/install/setup.bash\n" +\
+               "$mydir/" + pkg_dir + binary
+      f.write(script)
+      f.close()
 
-  binaries_string += '\n'.join([" - name: bin/lib/" + binary for binary in lib_binaries])
+    binaries_string += '\n'.join([" - name: bin/" + path + "/" + binary for binary in binaries])
 
-# Also collect scripts that were installed to install/share/<package>
-pkg_share_dir = "install/share/" + package_key + "/"
-if os.path.exists(pkg_share_dir):
-  share_scripts = [script for script in os.listdir(pkg_share_dir)\
-      if os.access(pkg_share_dir + script, os.X_OK) and os.path.isfile(pkg_share_dir + binary)]
-
-  snappy_share_dir = snappy_bin_dir + "share/"
-  check_create_dir(snappy_share_dir)
-
-  for binary in share_scripts:
-    f = open(snappy_bin_dir + "share/" + binary, "w+")
-    script = "#!/usr/bin/bash\n" +\
-             "mydir=\"$( cd \"../../$( dirname \"${BASH_SOURCE[0]}\" )\" && pwd )\"\n" +\
-             ". $mydir/opt/ros/" + distro + "/setup.bash\n" + \
-             ". $mydir/install/setup.bash\n" +\
-             "$mydir/" + pkg_share_dir + binary
-    f.write(script)
-    f.close()
-
-  binaries_string += "\n".join([" - name: bin/share/" + script for script in share_scripts])
+collect_executables("lib")
+collect_executables("share")
 
 # Create scripts launching the launchfiles out of our package
 launchdir =  pkg_share_dir + "launch"
@@ -191,11 +171,11 @@ shutil.copy2("/opt/ros/indigo/_setup_util.py",\
 data = "name: " + package_key + "\n" +\
        "version: " + version + "\n" +\
        "vendor: " + maintainer_string + "\n" +\
-       "binaries:\n" + binaries_string #+ "\n" +\
-       #"services:\n" + services_string
+       "binaries:\n" + binaries_string
 
 f = open(snappy_meta_dir + "package.yaml", "w+")
 f.write(data)
 f.close()
 
+# TODO use something other than system
 os.system("snappy build snappy_build/" + package_key)
