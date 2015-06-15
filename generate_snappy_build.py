@@ -120,6 +120,7 @@ set -x
 mydir=$(dirname $(dirname $(builtin cd "`dirname "${BASH_SOURCE[0]}"`" > /dev/null && pwd)))
 . $mydir/install/setup.bash
 . $mydir/opt/ros/%s/setup.bash
+export ROS_MASTER_URI=http://localhost:11311
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$mydir/usr/lib/x86_64-linux-gnu:$mydir/usr/lib
 export PATH=$PATH:$mydir/usr/bin
 export PYTHONPATH=$PYTHONPATH:$mydir/usr/lib/python2.7/dist-packages
@@ -134,6 +135,7 @@ set +x""" % (self.distro, pkg_dir + binary)
           ret += " - name: bin/" + path + "/" + binary_final + "\n"
 
       return ret
+
     return ""
 
   def create_dir_structure(self):
