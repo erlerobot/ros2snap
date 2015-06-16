@@ -40,6 +40,18 @@ class SnappyBuilder:
     self.snappy_bin_dir = self.snappy_root + "bin/"
     self.pkg_root = pkg_root
     print "Package root: " + pkg_root
+    setup = ". $mydir/opt/ros/%s/setup.bash\n" % self.distro
+    if self.pkg_root == "install/":
+      setup += ". $mydir/%ssetup.bash" % self.pkg_root
+    self.environment_script = """#!/bin/bash
+mydir=$(dirname $(dirname $(builtin cd "`dirname "${BASH_SOURCE[0]}"`" > /dev/null && pwd)))
+%s
+export ROS_MASTER_URI=http://localhost:11311
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$mydir/usr/lib/x86_64-linux-gnu:$mydir/usr/lib
+export PATH=$PATH:$mydir/usr/bin
+export PYTHONPATH=$PYTHONPATH:$mydir/usr/lib/python2.7/dist-packages
+export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$mydir/usr/lib/pkgconfig:$mydir/usr/lib/x86_64-linux-gnu/pkgconfig
+""" % setup
 
     self.cache = apt.Cache()
 
@@ -114,17 +126,7 @@ class SnappyBuilder:
           f = open(snappy_dir + binary_final, "w+")
           # TODO Parse python version for PYTHONPATH
           # is there an env variable to get the snap root...?
-          script =\
-"""#!/bin/bash
-mydir=$(dirname $(dirname $(builtin cd "`dirname "${BASH_SOURCE[0]}"`" > /dev/null && pwd)))
-. $mydir/%ssetup.bash
-. $mydir/opt/ros/%s/setup.bash
-export ROS_MASTER_URI=http://localhost:11311
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$mydir/usr/lib/x86_64-linux-gnu:$mydir/usr/lib
-export PATH=$PATH:$mydir/usr/bin
-export PYTHONPATH=$PYTHONPATH:$mydir/usr/lib/python2.7/dist-packages
-export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$mydir/usr/lib/pkgconfig:$mydir/usr/lib/x86_64-linux-gnu/pkgconfig
-$mydir/%s""" % (self.pkg_root, self.distro, install_dir + binary)
+          script = self.environment_script + "$mydir/%s" % (install_dir + binary)
 
           f.write(script)
           f.close()
@@ -146,7 +148,6 @@ $mydir/%s""" % (self.pkg_root, self.distro, install_dir + binary)
 
   def copy_files_from_pkg_root(self):
     # If it's a valid root, first level will have bin, lib, include, share
-    # TODO this doesn't get bin!!
     for path in os.listdir(self.pkg_root):
       # Check this folder for the package name
       if os.path.isdir(self.pkg_root + path) and (self.package_key in os.listdir(self.pkg_root + path)):
@@ -180,15 +181,17 @@ $mydir/%s""" % (self.pkg_root, self.distro, install_dir + binary)
     launchdir = self.pkg_root + "/share/" + self.package_key + "/launch"
     if os.path.exists(launchdir):
       launchfiles = os.listdir(launchdir)
+      check_create_dir(self.snappy_bin_dir + "launch")
       for launchfile in launchfiles:
-        launch_string = "roslaunch " + self.package_key + " " + launchfile
-        f = open(self.snappy_bin_dir+launchfile, "w+")
+        launch_string = self.environment_script + "roslaunch " + self.package_key + " " + launchfile
+        dst = self.snappy_bin_dir+ "launch/" +launchfile
+        f = open(dst, "w+")
         f.write(launch_string)
         f.close()
-        st = os.stat(self.snappy_bin_dir+launchfile)
-        os.chmod(self.snappy_bin_dir+launchfile, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        st = os.stat(dst)
+        os.chmod(dst, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-      binaries_string += '\n'.join([" - name: bin/" + launch for launch in launchfiles])
+      binaries_string += '\n'.join([" - name: bin/launch" + launch for launch in launchfiles])
 
     data = "name: " + self.package_key_final + "\n" +\
            "version: " + version + "\n" +\
