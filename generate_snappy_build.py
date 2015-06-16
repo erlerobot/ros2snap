@@ -191,7 +191,7 @@ export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$mydir/usr/lib/pkgconfig:$mydir/usr/lib/
         st = os.stat(dst)
         os.chmod(dst, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-      binaries_string += '\n'.join([" - name: bin/launch" + launch for launch in launchfiles])
+      binaries_string += '\n'.join([" - name: bin/launch/" + launch for launch in launchfiles])
 
     data = "name: " + self.package_key_final + "\n" +\
            "version: " + version + "\n" +\
