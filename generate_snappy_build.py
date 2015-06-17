@@ -7,6 +7,7 @@
 # -s: Enable/disable building of snap
 #
 # If building from source (default), run at the root of a catkin workspace
+# TODO Unset env vars
 
 import bloom.generators.common
 import catkin_pkg.packages
@@ -18,7 +19,7 @@ import shutil
 import stat
 import sys
 
-core_rosdeps = ['rosclean', 'rosmaster', 'rosout', 'rosmake']
+core_rosdeps = ['rosclean', 'rosmaster', 'rosout']
 
 def check_create_dir(dirname):
   if not os.path.exists(dirname):
@@ -42,25 +43,37 @@ class SnappyBuilder:
     self.snappy_bin_dir = self.snappy_root + "bin/"
     self.pkg_root = pkg_root
     print "Package root: " + pkg_root
-    setup = ". $mydir/opt/ros/%s/setup.bash\n" % self.distro
+
+    setup = ""
+
+
+    # workaround for folder in setup.bash not registering
+    ros_setup_dir = "$mydir/opt/ros/%s" % self.distro
+    setup += "export _CATKIN_SETUP_DIR=%s\n" % ros_setup_dir
+    setup += ". %s/setup.sh\n" % ros_setup_dir
+    # Can't seem to overlay install/setup.sh and opt/ros/indigo/setup.sh
+
     if self.pkg_root == "install/":
-      # Bash voodoo workaround to correct the install/setup.sh path
-      # TODO a similar workaround may be needed to make opt/ros/indigo/setup.bash work
-      local_setup = "$mydir/%s%s/setup.bash" % (self.pkg_root, self.package_key_final)
-      #setup += "_CATKIN_SETUP_DIR=$mydir/%s%s\n" % (self.pkg_root, self.package_key_final)
-      setup += "sed -i 's!^_CATKIN_SETUP_DIR=.*$!_CATKIN_SETUP_DIR='$mydir'/%s%s!' %s\n" % (self.pkg_root, self.package_key_final, local_setup)
-      setup += ". %s\n" % local_setup
+      #local_setup_dir = "$mydir/%s" % self.pkg_root
+      setup += """export LD_LIBRARY_PATH=$mydir/install/lib:$mydir/install/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+export ROS_PACKAGE_PATH=$mydir/install/share:$mydir/install/stacks:$ROS_PACKAGE_PATH
+export PATH=$mydir/install/bin:$PATH
+export PYTHONPATH=$mydir/install/lib/python2.7/dist-packages:$PYTHONPATH
+export PKG_CONFIG_PATH=$mydir/install/lib/pkgconfig:$mydir/install/lib/x86_64-linux-gnu/pkgconfig:PKG_CONFIG_PATH
+export CMAKE_PREFIX_PATH=$mydir/install:$CMAKE_PREFIX_PATH
+"""
+      #setup += "export _CATKIN_SETUP_DIR=%s\n" % local_setup_dir[:len(local_setup_dir)-1]
+      #setup += ". %ssetup.sh\n" % local_setup_dir
 
     self.environment_script = """#!/bin/bash
 mydir=$(dirname $(dirname $(builtin cd "`dirname "${BASH_SOURCE[0]}"`" > /dev/null && pwd)))
 %s
 export ROS_MASTER_URI=http://localhost:11311
 export LD_LIBRARY_PATH=$mydir/usr/lib/x86_64-linux-gnu:$mydir/usr/lib:$LD_LIBRARY_PATH
-export PATH=$mydir/opt/ros/%s/bin:$mydir/usr/bin:$PATH
-export PYTHONPATH=$mydir/opt/ros/%s/lib/python2.7/dist-packages:$mydir/usr/lib/python2.7/dist-packages:$PYTHONPATH
+export PATH=$mydir/usr/bin:$PATH
+export PYTHONPATH=$mydir/usr/lib/python2.7/dist-packages:$PYTHONPATH
 export PKG_CONFIG_PATH=$mydir/usr/lib/pkgconfig:$mydir/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
-export CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH:$mydir/opt/ros/%s/
-""" % (self.distro, self.distro, self.distro, setup)
+""" % setup
 
     self.cache = apt.Cache()
 
@@ -121,27 +134,29 @@ export CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH:$mydir/opt/ros/%s/
         self.copy_recursive_dependencies(package)
 
   def collect_binaries(self, path):
-    install_dir = "install/" + path + "/" + self.package_key + "/"
+    install_dir = "install/" + path + "/"
     pkg_dir = self.snappy_root + install_dir
     if os.path.exists(pkg_dir):
       snappy_dir = self.snappy_bin_dir + path + "/"
       check_create_dir(snappy_dir)
 
       ret = ""
-      for binary in os.listdir(pkg_dir):
-        if os.access(pkg_dir + binary, os.X_OK) and os.path.isfile(pkg_dir + binary):
-          binary_final = binary.replace("_", "-")
-          script_path = snappy_dir + binary_final
-          f = open(snappy_dir + binary_final, "w+")
-          # TODO Parse python version for PYTHONPATH
-          # is there an env variable to get the snap root...?
-          script = self.environment_script + "$mydir/%s" % (install_dir + binary)
+      for dirpath, dirnames, filenames in os.walk(pkg_dir):
+        for binary in filenames:
+          if os.access(dirpath + "/" + binary, os.X_OK) and os.path.isfile(dirpath + "/" + binary):
+            relpath = os.path.relpath(dirpath, self.snappy_root)
+            binary_final = binary.replace("_", "-")
+            script_path = snappy_dir + binary_final
+            f = open(snappy_dir + binary_final, "w+")
+            # TODO Parse python version for PYTHONPATH
+            # is there an env variable to get the snap root...?
+            script = self.environment_script + "$mydir/%s" % (relpath + "/" + binary)
 
-          f.write(script)
-          f.close()
-          st = os.stat(script_path)
-          os.chmod(script_path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-          ret += " - name: bin/" + path + "/" + binary_final + "\n"
+            f.write(script)
+            f.close()
+            st = os.stat(script_path)
+            os.chmod(script_path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            ret += " - name: bin/" + path + "/" + binary_final + "\n"
 
       return ret
 
@@ -163,8 +178,9 @@ export CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH:$mydir/opt/ros/%s/
       # Check this folder for the package name
       if os.path.isdir(self.pkg_root + path) and (self.package_key in os.listdir(self.pkg_root + path)):
         # Copy the contents to snappy_root
-        shutil.copytree(self.pkg_root + path + "/" + self.package_key,\
-            self.snappy_root + "install/" + path + "/" + self.package_key_final)
+        dstpath = self.snappy_root + "install/" + path
+        shutil.copytree(self.pkg_root + path, dstpath)
+
 
   def parse_write_metadata(self):
     description = self.package.description
@@ -263,12 +279,12 @@ def prepare_from_source(package_key):
   builder.create_dir_structure()
   # Copy all files in install to snappy_build/<package>
   # If building from source, need to also get the setup files
-  check_create_dir(builder.snappy_root + "install/" + builder.package_key_final)
+  check_create_dir(builder.snappy_root + "install/")
 
   for path in os.listdir(builder.pkg_root):
     if os.path.isfile(builder.pkg_root + "/" + path):
       shutil.copy2(builder.pkg_root + "/" + path, \
-          builder.snappy_root + "install/" + builder.package_key_final)
+          builder.snappy_root + "install/")
 
   builder.copy_files_from_pkg_root()
   return builder
