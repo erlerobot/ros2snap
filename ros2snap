@@ -1,345 +1,367 @@
 #!/usr/bin/env python
 
-# Usage: ros2snap <-dbcms> <package>
-# -d: Build from installed debians instead of source
-# -m: Enable/disable generating snappy metadata
-# -c: Enable/disable copying of recursive dependencies
-# -s: Enable/disable building of snap
-#
-# If building from source (default), run at the root of a catkin workspace
-# TODO Unset env vars
-
-import bloom.generators.common
-import catkin_pkg.packages
-
-import apt
+from __future__ import print_function
 import argparse
 import os
+import platform
 import shutil
 import stat
 import sys
 
-core_rosdeps = ['rosclean', 'rosmaster', 'rosout']
+import apt
+import bloom.generators.common
+import catkin_pkg.packages
+
+core_rosdeps = ["rosclean", "rosmaster", "rosout"]
+
 
 def check_create_dir(dirname):
-  if not os.path.exists(dirname):
-    os.makedirs(dirname)
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
 
 # Resolve and recursively copy dependencies
 class SnappyBuilder:
-  def __init__(self, package_key, packages, pkg_root):
-    self.copied_packages = set()
-    self.package_key = package_key
-    self.package_key_final = package_key.replace("_", "-").lower()
-    self.package = packages[package_key]
-    if self.package is None:
-      print "Requested package " + self.package_key + " not found, abort."
-      sys.exit(-1)
+    def __init__(self, package_key, packages, pkg_root):
+        self.copied_packages = set()
+        self.package_key = package_key
+        self.package_key_final = package_key.replace("_", "-").lower()
+        self.package = packages[package_key]
+        if self.package is None:
+            print("Package '" + self.package_key + "' not found, exiting.",
+                  file=sys.stderr)
+            sys.exit(-1)
 
-    self.distro = os.getenv("ROS_DISTRO", "jade")
+        self.distro = os.getenv("ROS_DISTRO", "jade")
 
-    self.snappy_root = "snappy_build/" + self.package_key_final + "/"
-    self.snappy_meta_dir = self.snappy_root + "meta/"
-    self.snappy_bin_dir = self.snappy_root + "bin/"
-    self.pkg_root = pkg_root
-    print "Package root: " + pkg_root
+        self.snappy_root = "snappy_build/" + self.package_key_final + "/"
+        self.snappy_meta_dir = self.snappy_root + "meta/"
+        self.snappy_bin_dir = self.snappy_root + "bin/"
+        self.pkg_root = pkg_root
+        self.linux_distro = platform.linux_distribution()[0].lower()
+        self.linux_release = platform.linux_distribution()[1].lower()
 
-    setup = ""
+        setup = ""
 
+        # workaround for folder in setup.bash not registering
+        ros_setup_dir = "$mydir/opt/ros/%s" % self.distro
+        setup += "export _CATKIN_SETUP_DIR=%s\n" % ros_setup_dir
+        setup += ". %s/setup.sh\n" % ros_setup_dir
+        # Can't seem to overlay install/setup.sh and opt/ros/indigo/setup.sh
 
-    # workaround for folder in setup.bash not registering
-    ros_setup_dir = "$mydir/opt/ros/%s" % self.distro
-    setup += "export _CATKIN_SETUP_DIR=%s\n" % ros_setup_dir
-    setup += ". %s/setup.sh\n" % ros_setup_dir
-    # Can't seem to overlay install/setup.sh and opt/ros/indigo/setup.sh
+        if self.pkg_root == "install/":
+            setup += """export LD_LIBRARY_PATH=$mydir/install/lib:$mydir/\
+install/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+    export ROS_PACKAGE_PATH=$mydir/install/share:$mydir/install/stacks:\
+$ROS_PACKAGE_PATH
+    export PATH=$mydir/install/bin:$PATH
+    export PYTHONPATH=$mydir/install/lib/python2.7/dist-packages:$PYTHONPATH
+    export PKG_CONFIG_PATH=$mydir/install/lib/pkgconfig:$mydir/install/lib/\
+x86_64-linux-gnu/pkgconfig:PKG_CONFIG_PATH
+    export CMAKE_PREFIX_PATH=$mydir/install:$CMAKE_PREFIX_PATH
+    """
 
-    if self.pkg_root == "install/":
-      #local_setup_dir = "$mydir/%s" % self.pkg_root
-      setup += """export LD_LIBRARY_PATH=$mydir/install/lib:$mydir/install/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
-export ROS_PACKAGE_PATH=$mydir/install/share:$mydir/install/stacks:$ROS_PACKAGE_PATH
-export PATH=$mydir/install/bin:$PATH
-export PYTHONPATH=$mydir/install/lib/python2.7/dist-packages:$PYTHONPATH
-export PKG_CONFIG_PATH=$mydir/install/lib/pkgconfig:$mydir/install/lib/x86_64-linux-gnu/pkgconfig:PKG_CONFIG_PATH
-export CMAKE_PREFIX_PATH=$mydir/install:$CMAKE_PREFIX_PATH
-"""
-      #setup += "export _CATKIN_SETUP_DIR=%s\n" % local_setup_dir[:len(local_setup_dir)-1]
-      #setup += ". %ssetup.sh\n" % local_setup_dir
+        self.environment_script = """#!/bin/bash
+    mydir=$(dirname $(dirname $(builtin cd "`dirname "${BASH_SOURCE[0]}"`" > \
+/dev/null && pwd)))
+    %s
+    export ROS_MASTER_URI=http://localhost:11311
+    export LD_LIBRARY_PATH=$mydir/usr/lib/x86_64-linux-gnu:$mydir/usr/lib:\
+$LD_LIBRARY_PATH
+    export PATH=$mydir/usr/bin:$PATH
+    export PYTHONPATH=$mydir/usr/lib/python2.7/dist-packages:$PYTHONPATH
+    export PKG_CONFIG_PATH=$mydir/usr/lib/pkgconfig:$mydir/usr/lib/\
+x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
+    """ % setup
 
-    self.environment_script = """#!/bin/bash
-mydir=$(dirname $(dirname $(builtin cd "`dirname "${BASH_SOURCE[0]}"`" > /dev/null && pwd)))
-%s
-export ROS_MASTER_URI=http://localhost:11311
-export LD_LIBRARY_PATH=$mydir/usr/lib/x86_64-linux-gnu:$mydir/usr/lib:$LD_LIBRARY_PATH
-export PATH=$mydir/usr/bin:$PATH
-export PYTHONPATH=$mydir/usr/lib/python2.7/dist-packages:$PYTHONPATH
-export PKG_CONFIG_PATH=$mydir/usr/lib/pkgconfig:$mydir/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
-""" % setup
+        self.cache = apt.Cache()
 
-    self.cache = apt.Cache()
+    def resolve_and_copy(self, key):
+        # Resolve key to system package name
+        # TODO: Cross-platform solution for args
+        platform_tup = platform.linux_distribution()
+        key_entry = bloom.generators.common.resolve_rosdep_key(
+            key, self.linux_distro, self.linux_release)
+        if key_entry is None or key_entry[0] is None or len(key_entry[0]) == 0:
+            return
 
-  def resolve_and_copy(self, key):
-    # Resolve key to system package name
-    # TODO: Cross-platform solution for args
-    key_entry = bloom.generators.common.resolve_rosdep_key(key, "ubuntu", "trusty")
-    if key_entry is None or (key_entry[0] is None) or (len(key_entry[0]) == 0):
-      return
+        apt_name = key_entry[0][0]
+        self.copy_from_apt_cache(apt_name)
 
-    apt_name = key_entry[0][0]
-    self.copy_from_apt_cache(apt_name)
+    def copy_files(self, run_dep_files):
+        # Copy all the files
+        for dep_path in run_dep_files:
+            if os.path.isfile(dep_path):
+                fullpath = self.snappy_root + dep_path
+                check_create_dir(os.path.dirname(fullpath))
+                shutil.copy2(dep_path, fullpath)
 
-  def copy_files(self, run_dep_files):
-    # Copy all the files
-    for dep_path in run_dep_files:
-      if os.path.isfile(dep_path):
-        fullpath = self.snappy_root + dep_path
-        check_create_dir(os.path.dirname(fullpath))
-        shutil.copy2(dep_path, fullpath)
+    def copy_from_apt_cache(self, apt_name):
+        # Use apt python API to get all files
+        run_pkg = self.cache[apt_name]
 
-  def copy_from_apt_cache(self, apt_name):
-    # Use apt python API to get all files
-    run_pkg = self.cache[apt_name]
+        # TODO: exclusion rule for top-level packages (e.g. python)
+        # that snappy instance already has
+        if not apt_name.startswith("ros-" + self.distro + "-"):
+            versions = run_pkg.versions
+            # system packages
+            if len(versions) > 0:
+                version = versions[0]
+                for dependency in version.dependencies:
+                    key = dependency[0].name
+                    if key in self.copied_packages or not key in self.cache:
+                        continue
+                    self.copied_packages.add(key)
+                    self.copy_from_apt_cache(key)
 
-    # TODO for performance: exclusion rule for top-level packages (e.g. python)
-    # that snappy instance already has
-    if not apt_name.startswith("ros-" + self.distro + "-"):
-      versions = run_pkg.versions
-      # system packages
-      if len(versions) > 0:
-        version = versions[0]
-        for dependency in version.dependencies:
-          key = dependency[0].name
-          if key in self.copied_packages or not self.cache.has_key(key):
-            continue
-          self.copied_packages.add(key)
-          self.copy_from_apt_cache(key)
+        # TODO: Catch more errors
+        # TODO: install missing run deps with package manager
+        # TODO: What about local installs?
 
-    # TODO: Catch more errors
-    # TODO: install missing run deps with package manager
-    # TODO: What about local installs?
+        self.copy_files(run_pkg.installed_files)
 
-    self.copy_files(run_pkg.installed_files)
+    def copy_recursive_dependencies(self, package):
+        run_dep_keys = [dep.name for dep in package.run_depends]
 
-  def copy_recursive_dependencies(self, package):
-    run_dep_keys = [dep.name for dep in package.run_depends]
+        for run_dep in run_dep_keys:
+            if run_dep in self.copied_packages:
+                continue
+            self.resolve_and_copy(run_dep)
+            self.copied_packages.add(run_dep)
+            # Get the package.xml of the run dependencies if it's a ROS package
+            ros_path = os.path.dirname(os.getenv("ROS_ROOT")) + "/" + run_dep
+            if os.path.isdir(ros_path):
+                package = catkin_pkg.package.parse_package(ros_path)
+                self.copy_recursive_dependencies(package)
 
-    for run_dep in run_dep_keys:
-      if run_dep in self.copied_packages:
-        continue
-      self.resolve_and_copy(run_dep)
-      self.copied_packages.add(run_dep)
-      # Get the package.xml of the run dependencies if it's a ROS package
-      ros_path = os.path.dirname(os.getenv("ROS_ROOT")) + "/" + run_dep
-      packages = catkin_pkg.packages.find_packages(ros_path)
-      for package in packages.values():
-        self.copy_recursive_dependencies(package)
+    def collect_binaries(self, path):
+        install_dir = "install/" + path + "/"
+        pkg_dir = self.snappy_root + install_dir
+        if os.path.exists(pkg_dir):
+            snappy_dir = self.snappy_bin_dir + path + "/"
+            check_create_dir(snappy_dir)
 
-  def collect_binaries(self, path):
-    install_dir = "install/" + path + "/"
-    pkg_dir = self.snappy_root + install_dir
-    if os.path.exists(pkg_dir):
-      snappy_dir = self.snappy_bin_dir + path + "/"
-      check_create_dir(snappy_dir)
+            ret = ""
+            for dirpath, dirnames, filenames in os.walk(pkg_dir):
+                for binary in filenames:
+                    if os.access(dirpath + "/" + binary, os.X_OK) and\
+                            os.path.isfile(dirpath + "/" + binary):
+                        relpath = os.path.relpath(dirpath, self.snappy_root)
+                        binary_final = binary.replace("_", "-")
+                        script_path = snappy_dir + binary_final
+                        # TODO Parse python version for PYTHONPATH
+                        # is there an env variable to get the snap root...?
+                        script = self.environment_script + "$mydir/%s" %\
+                            (relpath + "/" + binary)
 
-      ret = ""
-      for dirpath, dirnames, filenames in os.walk(pkg_dir):
-        for binary in filenames:
-          if os.access(dirpath + "/" + binary, os.X_OK) and os.path.isfile(dirpath + "/" + binary):
-            relpath = os.path.relpath(dirpath, self.snappy_root)
-            binary_final = binary.replace("_", "-")
-            script_path = snappy_dir + binary_final
-            f = open(snappy_dir + binary_final, "w+")
-            # TODO Parse python version for PYTHONPATH
-            # is there an env variable to get the snap root...?
-            script = self.environment_script + "$mydir/%s" % (relpath + "/" + binary)
+                        with open(snappy_dir + binary_final, "w+") as f:
+                            f.write(script)
+                            f.close()
 
-            f.write(script)
+                        st = os.stat(script_path)
+                        os.chmod(script_path, st.st_mode | stat.S_IXUSR |
+                                 stat.S_IXGRP | stat.S_IXOTH)
+                        ret += " - name: bin/" + path + "/" + binary_final + "\n"
+
+            return ret
+
+        return ""
+
+    def create_dir_structure(self):
+        # TODO reconsider deleting the entire snappy root, do this in chunks
+        # based on command line args
+        if os.path.exists(self.snappy_root):
+            shutil.rmtree(self.snappy_root)
+
+        check_create_dir("snappy_build")
+        check_create_dir(self.snappy_meta_dir)
+        check_create_dir(self.snappy_bin_dir)
+
+    def copy_files_from_pkg_root(self):
+        # If it's a valid root, first level will have bin, lib, include, share
+        for path in os.listdir(self.pkg_root):
+            # Check this folder for the package name
+            if os.path.isdir(self.pkg_root + path) and\
+                    self.package_key in os.listdir(self.pkg_root + path):
+                # Copy the contents to snappy_root
+                dstpath = self.snappy_root + "install/" + path
+                shutil.copytree(self.pkg_root + path, dstpath)
+
+    def parse_write_metadata(self):
+        description = self.package.description
+
+        # Inject description into readme.md
+        with open(self.snappy_meta_dir + "readme.md", "w+") as f:
+            f.write(self.package_key + "\n\n")
+            f.write(description)
             f.close()
-            st = os.stat(script_path)
-            os.chmod(script_path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            ret += " - name: bin/" + path + "/" + binary_final + "\n"
 
-      return ret
+        # get first maintainer name and email
+        maintainer_string = self.package.maintainers[0].name + " <" +\
+            self.package.maintainers[0].email + ">"
 
-    return ""
+        # TODO icon, architecture
 
-  def create_dir_structure(self):
-    # TODO reconsider deleting the entire snappy root, do this in chunks
-    # based on command line args
-    if os.path.exists(self.snappy_root):
-      shutil.rmtree(self.snappy_root)
+        version = self.package.version
 
-    check_create_dir("snappy_build")
-    check_create_dir(self.snappy_meta_dir)
-    check_create_dir(self.snappy_bin_dir)
+        binaries_string = ""
 
-  def copy_files_from_pkg_root(self):
-    # If it's a valid root, first level will have bin, lib, include, share
-    for path in os.listdir(self.pkg_root):
-      # Check this folder for the package name
-      if os.path.isdir(self.pkg_root + path) and (self.package_key in os.listdir(self.pkg_root + path)):
-        # Copy the contents to snappy_root
-        dstpath = self.snappy_root + "install/" + path
-        shutil.copytree(self.pkg_root + path, dstpath)
+        print("Checking lib, share, and launch for executables", file=sys.stderr)
+        binaries_string += self.collect_binaries("lib")
+        binaries_string += self.collect_binaries("share")
 
+        # Create scripts launching the launchfiles out of our package
+        launchdir = self.pkg_root + "/share/" + self.package_key + "/launch/"
+        if os.path.exists(launchdir):
+            # Add roslaunch package
+            self.resolve_and_copy("roslaunch")
 
-  def parse_write_metadata(self):
-    description = self.package.description
+            launchfiles = os.listdir(launchdir)
+            check_create_dir(self.snappy_bin_dir + "launch")
+            for launchfile in launchfiles:
+                dst = self.snappy_bin_dir + "launch/" + launchfile
+                launch_string = self.environment_script + "roslaunch $mydir/"\
+                    + launchdir + launchfile
+                with open(dst, "w+") as f:
+                    f.write(launch_string)
+                    f.close()
+                st = os.stat(dst)
+                os.chmod(dst, st.st_mode | stat.S_IXUSR |
+                         stat.S_IXGRP | stat.S_IXOTH)
 
-    # Inject description into readme.md
-    f = open(self.snappy_meta_dir + "readme.md", "w+")
-    f.write(self.package_key + "\n\n")
-    f.write(description)
-    f.close()
+            binaries_string += "\n".join(
+                [" - name: bin/launch/" + launch for launch in launchfiles])
 
-    # get first maintainer name and email
-    maintainer_string = self.package.maintainers[0].name + " <" + self.package.maintainers[0].email + ">"
+        data = "name: " + self.package_key_final + "\n" +\
+               "version: " + version + "\n" +\
+               "vendor: " + maintainer_string + "\n" +\
+               "binaries:\n" + binaries_string
 
-    # TODO icon, architecture
+        with open(self.snappy_meta_dir + "package.yaml", "w+") as f:
+            f.write(data)
+            f.close()
 
-    version = self.package.version
+    def copy_env_scripts(self):
+        # Copy /opt/ros/<distro>/setup.bash and dependencies
+        # better way of doing this?
+        rospath = os.path.dirname(os.path.dirname(os.getenv("ROS_ROOT")))
+        dstpath = self.snappy_root + rospath
+        check_create_dir(dstpath)
+        shutil.copy2(rospath + "/setup.bash", dstpath + "/setup.bash")
+        shutil.copy2(rospath + "/setup.sh", dstpath + "/setup.sh")
+        shutil.copy2(rospath + "/_setup_util.py", dstpath + "/_setup_util.py")
 
-    binaries_string = ""
+    def build(self, parse_metadata, copy_recursive_deps, build_snap):
+        print("Building snap for package '" + self.package_key + "'",
+              file=sys.stderr)
 
-    print "Checking lib, share, and launch for executables"
-    binaries_string += self.collect_binaries("lib")
-    binaries_string += self.collect_binaries("share")
+        if parse_metadata:
+            print("Parsing package.xml, writing to meta/package.yaml",
+                  file=sys.stderr)
+            self.parse_write_metadata()
+            self.copy_env_scripts()
 
-    # Create scripts launching the launchfiles out of our package
-    launchdir = self.pkg_root + "/share/" + self.package_key + "/launch/"
-    if os.path.exists(launchdir):
-      # Add roslaunch package
-      self.resolve_and_copy("roslaunch")
+        if copy_recursive_deps:
+            print("Copying all recursive run dependencies into snap",
+                  file=sys.stderr)
+            self.copy_recursive_dependencies(self.package)
+            for key in core_rosdeps:
+                self.resolve_and_copy(key)
 
-      launchfiles = os.listdir(launchdir)
-      check_create_dir(self.snappy_bin_dir + "launch")
-      for launchfile in launchfiles:
-        dst = self.snappy_bin_dir+ "launch/" + launchfile
-        launch_string = self.environment_script + "roslaunch $mydir/" + launchdir + launchfile
-        f = open(dst, "w+")
-        f.write(launch_string)
-        f.close()
-        st = os.stat(dst)
-        os.chmod(dst, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        self.cache.close()
 
-      binaries_string += '\n'.join([" - name: bin/launch/" + launch for launch in launchfiles])
+        if build_snap:
+            os.system("snappy build snappy_build/" + self.package_key_final)
 
-    data = "name: " + self.package_key_final + "\n" +\
-           "version: " + version + "\n" +\
-           "vendor: " + maintainer_string + "\n" +\
-           "binaries:\n" + binaries_string
-
-    f = open(self.snappy_meta_dir + "package.yaml", "w+")
-    f.write(data)
-    f.close()
-
-  def copy_env_scripts(self):
-    # with the correct dependencies copied, I think this function is unnecessary
-
-    # Copy /opt/ros/<distro>/setup.bash and dependencies
-    # better way of doing this?
-    rospath = os.path.dirname(os.path.dirname(os.getenv("ROS_ROOT")))
-    dstpath = self.snappy_root + rospath
-    check_create_dir(dstpath)
-    shutil.copy2(rospath + "/setup.bash", dstpath + "/setup.bash")
-    shutil.copy2(rospath + "/setup.sh", dstpath + "/setup.sh")
-    shutil.copy2(rospath + "/_setup_util.py", dstpath + "/_setup_util.py")
-
-  def build(self, parse_metadata, copy_recursive_deps, build_snap):
-    print "Building snap for package " + self.package_key
-
-    if parse_metadata:
-      print "Parsing metadata from package.xml and writing to meta/package.yaml"
-      self.parse_write_metadata()
-      self.copy_env_scripts()
-
-    if copy_recursive_deps:
-      print "Copying all recursive run dependencies into snap"
-      self.copy_recursive_dependencies(self.package)
-      for key in core_rosdeps:
-        self.resolve_and_copy(key)
-
-    self.cache.close()
-
-    if build_snap:
-      os.system("snappy build snappy_build/" + self.package_key_final)
 
 def prepare_from_source(package_key):
-  path = os.getcwd()
+    path = os.getcwd()
 
-  packages = catkin_pkg.packages.find_packages(path + "/src/")
+    packages = catkin_pkg.packages.find_packages(path + "/src/")
 
-  if len(packages) == 0:
-    print "No packages found in catkin workspace. Exiting."
-    sys.exit(-1)
+    if len(packages) == 0:
+        print("No packages found in catkin workspace. Exiting.", file=sys.stderr)
+        sys.exit(-1)
 
-  os.system("catkin_make install")
+    os.system("catkin_make install")
 
-  builder = SnappyBuilder(package_key, packages, "install/")
+    builder = SnappyBuilder(package_key, packages, "install/")
 
-  builder.create_dir_structure()
-  # Copy all files in install to snappy_build/<package>
-  # If building from source, need to also get the setup files
-  check_create_dir(builder.snappy_root + "install/")
+    builder.create_dir_structure()
+    # Copy all files in install to snappy_build/<package>
+    # If building from source, need to also get the setup files
+    check_create_dir(builder.snappy_root + "install/")
 
-  for path in os.listdir(builder.pkg_root):
-    if os.path.isfile(builder.pkg_root + "/" + path):
-      shutil.copy2(builder.pkg_root + "/" + path, \
-          builder.snappy_root + "install/")
+    for path in os.listdir(builder.pkg_root):
+        if os.path.isfile(builder.pkg_root + "/" + path):
+            shutil.copy2(builder.pkg_root + "/" + path,
+                         builder.snappy_root + "install/")
 
-  builder.copy_files_from_pkg_root()
-  return builder
+    builder.copy_files_from_pkg_root()
+    return builder
+
 
 def prepare_from_debs(package_key):
-  # TODO: Install the package debian if it is not found
+    # TODO: Install the package debian if it is not found
 
-  ros_path = os.path.dirname(os.getenv("ROS_ROOT"))
-  packages = catkin_pkg.packages.find_packages(ros_path)
+    ros_path = os.path.dirname(os.getenv("ROS_ROOT"))
+    packages = catkin_pkg.packages.find_packages(ros_path)
 
-  if len(packages) <= 0:
-    print "Error: no catkin packages found in " + ros_path + ". Exiting."
-    sys.exit(-1)
+    if len(packages) <= 0:
+        print("Error: no catkin packages found in '" + ros_path + "'. Exiting.",
+              file=sys.stderr)
+        sys.exit(-1)
 
-  builder = SnappyBuilder(package_key, packages, os.path.dirname(ros_path) + "/")
+    builder = SnappyBuilder(package_key, packages, os.path.dirname(ros_path) + "/")
 
-  builder.create_dir_structure()
-  builder.copy_files_from_pkg_root()
-  # get all the stuff we need that isn't under the package name
-  key_entry = bloom.generators.common.resolve_rosdep_key(builder.package_key, "ubuntu", "trusty")
-  if key_entry is None or (key_entry[0] is None) or (len(key_entry[0]) == 0):
-    print "Apt couldn't find package with name " + package_key + ". Exiting."
-    sys.exit(-1)
+    builder.create_dir_structure()
+    builder.copy_files_from_pkg_root()
+    # get all the stuff we need that isn't under the package name
+    key_entry = bloom.generators.common.resolve_rosdep_key(
+        builder.package_key, builder.linux_distro, builder.linux_release)
+    if key_entry is None or (key_entry[0] is None) or (len(key_entry[0]) == 0):
+        print("Couldn't find package with name '" + package_key + "'. Exiting.",
+              file=sys.stderr)
+        sys.exit(-1)
 
-  apt_name = key_entry[0][0]
-  pkg = builder.cache[apt_name]
-  builder.copy_files(pkg.installed_files)
-  return builder
+    apt_name = key_entry[0][0]
+    pkg = builder.cache[apt_name]
+    builder.copy_files(pkg.installed_files)
+    return builder
 
 
 def main():
-  parser = argparse.ArgumentParser(description="Build a Snappy package (snap) from a ROS package.")
-  parser.add_argument('package', help="Name of the ROS package to snap.")
-  parser.add_argument('--debs', '-d', help="If true, build ROS package from debians. Else, build from catkin workspace rooted at current dir.", default=0)
-  parser.add_argument('--metadata_generate', '-m', help="Enable/disable generating Snappy metadata for this package.", default=1)
-  parser.add_argument('--copy_dependencies', '-c', help="Enable/disable copying all recursive dependencies for this package.", default=1)
-  parser.add_argument('--snap_build', '-s', help="Enable/disable calling 'snappy_build' for this package.", default=1)
+    parser = argparse.ArgumentParser(
+        description="Build a Snappy package (snap) from a ROS package.")
+    parser.add_argument("package", help="Name of the ROS package to snap.")
+    parser.add_argument(
+        "--debs", "-d",
+        help="If true, build ROS package from debians. Else, build from catkin\
+        workspace rooted at current dir.", type=bool, default=False)
+    parser.add_argument(
+        "--metadata-generate", "-m",
+        help="Enable/disable generating Snappy metadata for this package.",
+        type=bool, default=True)
+    parser.add_argument(
+        "--copy-dependencies", "-c",
+        help="Enable/disable copying recursive dependencies for this package.",
+        type=bool, default=True)
+    parser.add_argument(
+        "--snap-build", "-s",
+        help="Enable/disable calling 'snappy_build' for this package.",
+        type=bool, default=True)
 
-  if len(sys.argv) < 2:
-    parser.print_usage()
-    sys.exit(-1)
+    parsed_args = parser.parse_args(sys.argv[1:])
+    package = parsed_args.package
+    if parsed_args.debs:
+        builder = prepare_from_debs(package)
+    else:
+        builder = prepare_from_source(package)
 
-  parsed_args = parser.parse_args(sys.argv[1:])
-  build_from_debs = int(parsed_args.debs)
-  parse_metadata = int(parsed_args.metadata_generate)
-  copy_recursive_deps = int(parsed_args.copy_dependencies)
-  build_snap = int(parsed_args.snap_build)
-  package = parsed_args.package
-  if build_from_debs:
-    builder = prepare_from_debs(package)
-  else:
-    builder = prepare_from_source(package)
+    builder.build(parsed_args.metadata_generate, parsed_args.copy_dependencies,
+                  parsed_args.snap_build)
 
-  builder.build(parse_metadata, copy_recursive_deps, build_snap)
-
+    # TODO Unset env vars on teardown
 
 if __name__ == "__main__":
-  main()
+    main()
