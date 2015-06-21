@@ -31,7 +31,7 @@ def resolve_rosdep_key(key, distro):
     except KeyError:
         print("Couldn't determine installer for " + os + ". Exiting.",
               file=stderr)
-        sys.exit(errno.EPERM)
+        sys.exit(1)
     installer = ctx.get_installer(installer_key)
     view = get_catkin_view(distro, os, version)
     d = view.lookup(key)
@@ -55,7 +55,7 @@ class SnappyBuilder:
         if self.package is None:
             print("Package '" + self.package_key + "' not found, exiting.",
                   file=sys.stderr)
-            sys.exit(errno.NOPKG)
+            sys.exit(1)
 
         self.distro = os.getenv("ROS_DISTRO", "jade")
 
@@ -300,7 +300,7 @@ def prepare_from_source(package_key):
     if len(packages) == 0:
         print("No packages found in catkin workspace. Exiting.",
               file=sys.stderr)
-        sys.exit(errno.EINVAL)
+        sys.exit(1)
 
     os.system("catkin_make install")
 
@@ -329,7 +329,7 @@ def prepare_from_debs(package_key):
     if len(packages) <= 0:
         print("Error: no catkin packages found in '" + ros_path + "'. Exiting.",
               file=sys.stderr)
-        sys.exit(errno.EINVAL)
+        sys.exit(1)
 
     builder = SnappyBuilder(
         package_key, packages, os.path.dirname(ros_path) + "/")
@@ -342,7 +342,7 @@ def prepare_from_debs(package_key):
     if apt_name is None:
         print("'" + package_key + "' is not installed from debians. Exiting.",
               file=sys.stderr)
-        sys.exit(errno.ENOPKG)
+        sys.exit(1)
     pkg = builder.cache[apt_name]
     builder.copy_files(pkg.installed_files)
 
