@@ -1,39 +1,94 @@
-snappy apps out of ROS packages
+Build Snappy apps from ROS packages
 ===============================
 
-`ros2snap` is a shell script that produces a snappy app out of a ROS package. The script does its best to fetch all the libraries and dependencies that the ROS package may need.
+`ros2snap` is a script that produces a snappy app out of a ROS package. The script fetches all the libraries and dependencies that the ROS package may need.
+
+`ros2snap` automatically generates binary entries in the snap for each executable and launchfile in the ROS package. The executables/launchfiles/nodes are wrapped in a bash script that properly sets up the ROS environment.
 
 ```bash
-Usage: ros2snap [-rvsh] <ros-pkg-name>
-    -r: compile the ros package"
-    -v: version"
-    -s: create a snap"
-    -h: show this help"
-
+# Usage: ros2snap <-dbcms> <package>
+# -d: Build from installed debians instead of source
+# -m: Enable/disable generating snappy metadata
+# -c: Enable/disable copying of recursive dependencies
+# -s: Enable/disable building of snap
+# -h: Show help
+#
+# If building from source (default), run at the root of a catkin workspace.
 ```
 
-####Examples:
+#### Example
+First, follow these [instructions](https://developer.ubuntu.com/en/snappy/start/) to run Snappy in a KVM instance.
 
-Compile the ROS package `ros_erle_takeoff_land`, an generate a snap for it.
+On your host computer, clone a simple example package into a catkin workspace:
+
 ```bash
-./ros2snap -rs ros_erle_takeoff_land
+mkdir -p snappy_ws/src
+cd snappy_ws/src
+git clone https://github.com/jacquelinekay/ros_snappy_example
 ```
 
-Only generate the metadata and fetch dependencies and libraries under install_isolated
+Symlink the ros2snap script into the root of the catkin workspace:
+
 ```bash
-./ros2snap ros_erle_takeoff_land
+cd snappy_ws
+ln -s ~/ros2snap/ros2snap
 ```
 
-Show the help
+Run the script, specifying the name of the package. The script will compile the catkin workspace, generate metadata for the binaries and the launchfile, copy ALL dependencies into the folder `snappy_build`, and "snap" the final package. The second to last step will take a while, and it requires a lot of disk space, so be patient.
+
 ```bash
-./ros2snap -h ros_erle_takeoff_land
+./ros2snap ros_snappy_example
+```
+
+Deploy the snap to your virtual machine:
+
+```bash
+snappy-remote --url=ssh://localhost:8022 install ./snappy-examples_0.0.0_all.snap
+```
+
+On the virtual machine, run the example launchfile:
+
+```bash
+(amd64)ubuntu@localhost:~$ snappy-examples.example.launch
+```
+
+You should see the following output from `roslaunch`, as well as the `ROS_INFO` output from the two nodes in your package.
+
+```
+started roslaunch server http://localhost.localdomain:43210/
+
+SUMMARY
+========
+
+PARAMETERS
+ * /rosdistro: indigo
+ *  * /rosversion: 1.11.13
+ *
+ *  NODES
+ *    /
+ *        listener (snappy_examples/listener)
+ *            talker (snappy_examples/talker.py)
+ *
+ *            auto-starting new master
+ *            process[master]: started with pid [3625]
+ *            ROS_MASTER_URI=http://localhost:11311
+ *
+ *            setting /run_id to 67a60fba-154f-11e5-9387-df749caed10f
+ *            process[rosout-1]: started with pid [3638]
+ *            started core service [/rosout]
+ *            process[talker-2]: started with pid [3641]
+ *            process[listener-3]: started with pid [3642]
+ *            [INFO] [WallTime: 1434586650.234387] hello world 1434586650.23
+ *            [INFO] [WallTime: 1434586650.334698] hello world 1434586650.33
+ *            [INFO] [WallTime: 1434586650.434642] hello world 1434586650.43
+ *            [ INFO] [1434586650.435590850]: I heard: [hello world 1434586650.43]
+ *            [INFO] [WallTime: 1434586650.534630] hello world 1434586650.53
+ *
 ```
 
 ####Credit
 This repository is based on Martin Pitt's (@martinpitt) work (http://www.piware.de/2015/01/snappy-package-for-robot-operating-system-tutorial/).
 
-####License
-GPLv3
 
 Index
 ------
